@@ -5446,53 +5446,75 @@ async function ghPutFile(path,str,msg,sha) {
   return r.json();
 }
 /* ══════════════════════════════════════════════════════
-   INTELLIGENCE DATABASE ENGINE - NO OVERWRITE MODE
+   FIXED DATABASE ENGINE - NO OVERWRITE MODE
 ══════════════════════════════════════════════════════ */
+
 function buildOISnapshot() {
     if(!chainData || !chainData.length) return null;
     
     const instrKey = document.getElementById('symbolSel')?.value || '';
     let symbol = INSTRUMENTS[instrKey]?.label || 'INDEX';
-    // Symbol name se spaces hatao taaki folder path clean rahe (e.g. "NIFTY 50" -> "NIFTY_50")
-    const folderSymbol = symbol.replace(/\s+/g, '_');
+    const folderSymbol = symbol.replace(/\s+/g, '_'); 
     
     const now = new Date();
     const ist = new Date(now.getTime() + 5.5 * 60 * 60 * 1000);
-    const dateStr = ist.toISOString().slice(0, 10); // Format: 2026-03-26
-    const timeStr = ist.toISOString().slice(11, 19).replace(/:/g, '-'); // Format: 09-30-45
+    const dateStr = ist.toISOString().slice(0, 10); 
+    const timeStr = ist.toISOString().slice(11, 19).replace(/:/g, '-'); 
 
     return {
-        // Path logic: Intelligence_Reports/NIFTY_50/2026-03-26/09-30-45.json
+        // Naya organized folder structure
         folder: `Intelligence_Reports/${folderSymbol}/${dateStr}`,
         filename: `${folderSymbol}_${timeStr}.json`,
 
-        // 1. LIVE SCREENSHOT DATA (Market Intelligence)
-        metrics: {
+        // Yahi wo hissa hai jahan error aa raha tha (Key fixed to 'intelligence_metrics')
+        intelligence_metrics: {
             timestamp: ist.toISOString(),
             symbol: symbol,
             spot: chainData[0]?.underlying_spot_price || 0,
             pcr: document.getElementById('statPCR')?.textContent || '—',
-            max_pain: document.getElementById('statPain')?.textContent || '—',
-            verdict: document.getElementById('marketVerdict')?.textContent || '—',
+            verdict: document.getElementById('marketVerdict')?.textContent || 'NEUTRAL',
             advisor: document.getElementById('greeksAdvice')?.innerText || '—',
-            sentiment: document.getElementById('sentTrendVal')?.textContent || '—',
-            momentum: document.getElementById('sentMomVal')?.textContent || '—'
+            sentiment: document.getElementById('sentTrendVal')?.textContent || '—'
         },
 
-        // 2. SIGNALS FOR BACKTEST (Screenshot 2 Data)
-        active_signals: [...strategyLogs], 
+        recorded_signals: [...strategyLogs], 
 
-        // 3. FULL OPTION CHAIN (Detailed Analysis)
         strikes: chainData.map(d => ({
             s: d.strike_price,
             c_oi: d.call_options?.market_data?.oi || 0,
             p_oi: d.put_options?.market_data?.oi || 0,
-            c_vol: d.call_options?.market_data?.volume || 0,
-            p_vol: d.put_options?.market_data?.volume || 0,
+            c_v: d.call_options?.market_data?.volume || 0,
+            p_v: d.put_options?.market_data?.volume || 0,
             c_ltp: d.call_options?.market_data?.ltp || 0,
             p_ltp: d.put_options?.market_data?.ltp || 0
         }))
     };
+}
+
+async function saveOISnapshot() {
+    const cfg = ghConfig();
+    if(!cfg.token) return;
+    
+    const snap = buildOISnapshot();
+    if(!snap) return;
+
+    const fullPath = `${snap.folder}/${snap.filename}`;
+    updateGhStatus(`⏳ Syncing ${snap.filename}...`, 'var(--yellow)');
+
+    try {
+        const jsonStr = JSON.stringify(snap, null, 2);
+        
+        // Safety check add kiya hai taaki verdict na milne par crash na ho
+        const commitMsg = `Data: ${snap.intelligence_metrics?.verdict || 'Update'}`;
+
+        // SHA null matlab hamesha NAYI file banegi, folder apne aap ban jayega
+        await ghPutFile(fullPath, jsonStr, commitMsg, null);
+        
+        updateGhStatus(`✓ Saved: ${snap.filename}`, 'var(--green)');
+    } catch(e) {
+        console.error('GH Save Error:', e);
+        updateGhStatus(`✗ Save Error: ${e.message}`, 'var(--red)');
+    }
 }
 let _ghSaving=false;
 async function saveOISnapshot() {
